@@ -1,10 +1,10 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::Clap;
 use colored::Colorize;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::BufReader;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
 struct Options {
@@ -66,15 +66,23 @@ fn main() -> Result<()> {
                         true
                     } else {
                         if let Ok(stderr) = String::from_utf8(output.stderr) {
-                            println!("{}", stderr);
+                            eprintln!("{}", stderr);
                         }
-                        println!("❌ {} {}\n", "Failed to set up test".red(), test.name.red());
+                        eprintln!(
+                            "❌ {} {}\n\n",
+                            "Failed to set up test".red(),
+                            test.name.red()
+                        );
                         false
                     }
                 }
                 Err(error) => {
-                    println!("❌ {} {}\n", "Failed to set up test".red(), test.name.red());
-                    println!("{}", error.to_string().red());
+                    eprintln!(
+                        "❌ {} {}\n\n",
+                        "Failed to set up test".red(),
+                        test.name.red()
+                    );
+                    eprintln!("{}", error.to_string().red());
                     false
                 }
             }
@@ -83,27 +91,38 @@ fn main() -> Result<()> {
         };
 
         let succeeded = if succeeded {
-            match Command::new(test.run).output() {
-                Ok(output) => {
-                    if output.status.success() {
-                        if let Ok(stdout) = String::from_utf8(output.stdout) {
-                            println!("{}", stdout);
-                        }
-                        println!("✅ {}\n", test.name.green());
-                        true
-                    } else {
-                        if let Ok(stderr) = String::from_utf8(output.stderr) {
-                            println!("{}", stderr);
-                        }
-                        println!("❌ {}\n", test.name.red());
-                        false
-                    }
-                }
-                Err(error) => {
-                    println!("❌ {}\n{}", test.name.red(), error.to_string().red());
-                    false
-                }
-            }
+            let mut command = Command::new(&test.run)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?;
+            let mut stdin = command
+                .stdin
+                .ok_or(anyhow!("Could not get a handle to stdin"));
+            // match Command::new(&test.run).output() {
+            //     Ok(output) => {
+            //         if output.status.success() {
+            //             if let Ok(stdout) = String::from_utf8(output.stdout) {
+            //                 println!("{}", stdout);
+            //             }
+            //             println!("✅ {}\n\n", test.name.green());
+            //             true
+            //         } else {
+            //             if let Ok(stderr) = String::from_utf8(output.stderr) {
+            //                 eprintln!("{}", stderr);
+            //             }
+            //             eprintln!("❌ {}\n\n", test.name.red());
+            //             false
+            //         }
+            //     }
+            //     Err(error) => {
+            //         eprintln!("{}", &test.run);
+            //         eprintln!("❌ {}", test.name.red());
+            //         eprintln!("{}\n\n", error);
+            //         false
+            //     }
+            // }
+            true
         } else {
             false
         };
