@@ -1,49 +1,16 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug executable 'autograder'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=autograder",
-                    "--package=autograder"
-                ],
-                "filter": {
-                    "name": "autograder",
-                    "kind": "bin"
-                }
-            },
-            "args": [
-                "--config",
-                "/mnt/f/School/21/4/computer_systems/weeks/1/homework-1-nice-regular-box-redux-tim-harding/.github/classroom/autograding.json"
-            ],
-            "cwd": "/mnt/f/School/21/4/computer_systems/weeks/1/homework-1-nice-regular-box-redux-tim-harding"
-        },
-
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'autograder'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=autograder",
-                    "--package=autograder"
-                ],
-                "filter": {
-                    "name": "autograder",
-                    "kind": "bin"
-                }
-            },
-            "args": [
-                "--config",
-                "/mnt/f/School/21/4/computer_systems/weeks/1/homework-1-nice-regular-box-redux-tim-harding/.github/classroom/autograding.json"
-            ],
-            "cwd": "/mnt/f/School/21/4/computer_systems/weeks/1/homework-1-nice-regular-box-redux-tim-harding"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug",
+      "program": "${workspaceFolder}/target/debug/autograder",
+      "cargo": {
+        "args": ["build"]
+      },
+      "args": ["--config", "./.github/classroom/autograding.json"],
+      "cwd": "/mnt/f/School/21/4/computer_systems/weeks/1/homework-1-nice-regular-box-redux-tim-harding"
+    }
+  ]
 }

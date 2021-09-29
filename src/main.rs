@@ -106,19 +106,23 @@ fn main() -> Result<()> {
                 .next()
                 .ok_or(anyhow!("Could not get run command executable"))?;
             // let args: Vec<_> = run_parts.collect();
+            println!("Before command");
             let mut command = Command::new(&executable)
                 // .args(&args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()?;
-            let mut stdin = command
-                .stdin
-                .take()
-                .ok_or(anyhow!("Could not get a handle to stdin"))?;
-            let mut writer = BufWriter::new(&mut stdin);
-            writer.write_all(test.input.as_bytes())?;
+            {
+                let stdin = command
+                    .stdin
+                    .as_mut()
+                    .ok_or(anyhow!("Could not get a handle to stdin"))?;
+                stdin.write_all(test.input.as_bytes())?;
+                // Stdin drops and finishes input
+            }
             let output = command.wait_with_output()?;
+            println!("After command");
             if output.status.success() {
                 if let Ok(stdout) = String::from_utf8(output.stdout) {
                     println!("{}", stdout);
