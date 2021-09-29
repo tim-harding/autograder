@@ -3,10 +3,11 @@ use clap::Clap;
 use colored::Colorize;
 use serde::Deserialize;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufReader, Write};
 use std::process::{Command, Stdio};
 
 // Todo: Find config by default
+// Todo: Fix line endings
 
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
 struct Options {
@@ -105,10 +106,9 @@ fn main() -> Result<()> {
             let executable = run_parts
                 .next()
                 .ok_or(anyhow!("Could not get run command executable"))?;
-            // let args: Vec<_> = run_parts.collect();
-            println!("Before command");
+            let args: Vec<_> = run_parts.collect();
             let mut command = Command::new(&executable)
-                // .args(&args)
+                .args(&args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -122,7 +122,6 @@ fn main() -> Result<()> {
                 // Stdin drops and finishes input
             }
             let output = command.wait_with_output()?;
-            println!("After command");
             if output.status.success() {
                 if let Ok(stdout) = String::from_utf8(output.stdout) {
                     println!("{}", stdout);
