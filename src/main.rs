@@ -6,14 +6,10 @@ use std::fs::File;
 use std::io::{BufReader, Write};
 use std::process::{Command, Stdio};
 
-// Todo: Fix line endings
-
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
 struct Options {
     #[clap(short, long, default_value = "./.github/classroom/autograding.json")]
     config: String,
-    #[clap(short, long)]
-    skip_setup: bool,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -57,44 +53,38 @@ fn main() -> Result<()> {
         .unwrap_or(0);
     let mut all_succeeded = true;
 
-    println!("{:?}", std::env::current_dir());
-
     for test in config.tests {
         println!("📝 {}", test.name);
 
-        let succeeded = if !opts.skip_setup {
-            if let Some(setup) = test.setup {
-                match Command::new(setup).output() {
-                    Ok(output) => {
-                        if output.status.success() {
-                            if let Ok(stdout) = String::from_utf8(output.stdout) {
-                                println!("{}", stdout);
-                            }
-                            true
-                        } else {
-                            if let Ok(stderr) = String::from_utf8(output.stderr) {
-                                eprintln!("{}", stderr);
-                            }
-                            eprintln!(
-                                "❌ {} {}\n\n",
-                                "Failed to set up test".red(),
-                                test.name.red()
-                            );
-                            false
+        let succeeded = if let Some(setup) = test.setup {
+            match Command::new(setup).output() {
+                Ok(output) => {
+                    if output.status.success() {
+                        if let Ok(stdout) = String::from_utf8(output.stdout) {
+                            println!("{}", stdout);
                         }
-                    }
-                    Err(error) => {
+                        true
+                    } else {
+                        if let Ok(stderr) = String::from_utf8(output.stderr) {
+                            eprintln!("{}", stderr);
+                        }
                         eprintln!(
                             "❌ {} {}\n\n",
                             "Failed to set up test".red(),
                             test.name.red()
                         );
-                        eprintln!("{}", error.to_string().red());
                         false
                     }
                 }
-            } else {
-                true
+                Err(error) => {
+                    eprintln!(
+                        "❌ {} {}\n\n",
+                        "Failed to set up test".red(),
+                        test.name.red()
+                    );
+                    eprintln!("{}", error.to_string().red());
+                    false
+                }
             }
         } else {
             true
