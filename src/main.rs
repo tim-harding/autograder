@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use clap::Clap;
 use colored::Colorize;
+use regex::Regex;
 use serde::Deserialize;
 use std::fs::File;
 use std::io::{BufReader, Write};
@@ -113,11 +114,24 @@ fn main() -> Result<()> {
             let output = command.wait_with_output()?;
             if output.status.success() {
                 if let Ok(stdout) = String::from_utf8(output.stdout) {
-                    println!("{}", stdout);
+                    println!("{}", &stdout);
+                    let okay = match test.comparison {
+                        Comparison::Included => stdout.contains(&test.output),
+                        Comparison::Exact => stdout.eq(&test.output),
+                        Comparison::Regex => {
+                            let re = Regex::new(&test.output)?;
+                            re.is_match(&stdout)
+                        }
+                    };
+                    if okay {
+                        println!("✅ {}\n\n", test.name);
+                    } else {
+                        eprintln!("❌ {}\n\n", test.name.red());
+                    }
+                    okay
+                } else {
+                    false
                 }
-                println!("✅ {}\n\n", test.name);
-                // Todo: Compare against output
-                true
             } else {
                 if let Ok(stderr) = String::from_utf8(output.stderr) {
                     eprintln!("{}", stderr);
@@ -143,3 +157,5 @@ fn main() -> Result<()> {
     println!("Points {}/{}", points, total_points);
     Ok(())
 }
+
+// Todo: Continue on from failed tests
