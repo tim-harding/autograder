@@ -3,13 +3,17 @@ use clap::Clap;
 use colored::Colorize;
 use serde::Deserialize;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, BufWriter, Write};
 use std::process::{Command, Stdio};
+
+// Todo: Find config by default
 
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
 struct Options {
     #[clap(short, long)]
     config: String,
+    #[clap(short, long)]
+    skip_setup: bool,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -53,76 +57,82 @@ fn main() -> Result<()> {
         .unwrap_or(0);
     let mut all_succeeded = true;
 
+    println!("{:?}", std::env::current_dir());
+
     for test in config.tests {
         println!("📝 {}", test.name);
 
-        let succeeded = if let Some(setup) = test.setup {
-            match Command::new(setup).output() {
-                Ok(output) => {
-                    if output.status.success() {
-                        if let Ok(stdout) = String::from_utf8(output.stdout) {
-                            println!("{}", stdout);
+        let succeeded = if !opts.skip_setup {
+            if let Some(setup) = test.setup {
+                match Command::new(setup).output() {
+                    Ok(output) => {
+                        if output.status.success() {
+                            if let Ok(stdout) = String::from_utf8(output.stdout) {
+                                println!("{}", stdout);
+                            }
+                            true
+                        } else {
+                            if let Ok(stderr) = String::from_utf8(output.stderr) {
+                                eprintln!("{}", stderr);
+                            }
+                            eprintln!(
+                                "❌ {} {}\n\n",
+                                "Failed to set up test".red(),
+                                test.name.red()
+                            );
+                            false
                         }
-                        true
-                    } else {
-                        if let Ok(stderr) = String::from_utf8(output.stderr) {
-                            eprintln!("{}", stderr);
-                        }
+                    }
+                    Err(error) => {
                         eprintln!(
                             "❌ {} {}\n\n",
                             "Failed to set up test".red(),
                             test.name.red()
                         );
+                        eprintln!("{}", error.to_string().red());
                         false
                     }
                 }
-                Err(error) => {
-                    eprintln!(
-                        "❌ {} {}\n\n",
-                        "Failed to set up test".red(),
-                        test.name.red()
-                    );
-                    eprintln!("{}", error.to_string().red());
-                    false
-                }
+            } else {
+                true
             }
         } else {
             true
         };
 
         let succeeded = if succeeded {
-            let mut command = Command::new(&test.run)
+            let mut run_parts = test.run.split(" ");
+            let executable = run_parts
+                .next()
+                .ok_or(anyhow!("Could not get run command executable"))?;
+            // let args: Vec<_> = run_parts.collect();
+            let mut command = Command::new(&executable)
+                // .args(&args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .spawn()?;
             let mut stdin = command
                 .stdin
-                .ok_or(anyhow!("Could not get a handle to stdin"));
-            // match Command::new(&test.run).output() {
-            //     Ok(output) => {
-            //         if output.status.success() {
-            //             if let Ok(stdout) = String::from_utf8(output.stdout) {
-            //                 println!("{}", stdout);
-            //             }
-            //             println!("✅ {}\n\n", test.name.green());
-            //             true
-            //         } else {
-            //             if let Ok(stderr) = String::from_utf8(output.stderr) {
-            //                 eprintln!("{}", stderr);
-            //             }
-            //             eprintln!("❌ {}\n\n", test.name.red());
-            //             false
-            //         }
-            //     }
-            //     Err(error) => {
-            //         eprintln!("{}", &test.run);
-            //         eprintln!("❌ {}", test.name.red());
-            //         eprintln!("{}\n\n", error);
-            //         false
-            //     }
-            // }
-            true
+                .take()
+                .ok_or(anyhow!("Could not get a handle to stdin"))?;
+            let mut writer = BufWriter::new(&mut stdin);
+            writer.write_all(test.input.as_bytes())?;
+            let output = command.wait_with_output()?;
+            if output.status.success() {
+                if let Ok(stdout) = String::from_utf8(output.stdout) {
+                    println!("{}", stdout);
+                }
+                println!("✅ {}\n\n", test.name);
+                // Todo: Compare against output
+                true
+            } else {
+                if let Ok(stderr) = String::from_utf8(output.stderr) {
+                    eprintln!("{}", stderr);
+                }
+                eprintln!("❌ {}\n\n", test.name.red());
+                false
+            }
         } else {
             false
         };
