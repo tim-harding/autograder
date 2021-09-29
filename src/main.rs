@@ -6,12 +6,11 @@ use std::fs::File;
 use std::io::{BufReader, Write};
 use std::process::{Command, Stdio};
 
-// Todo: Find config by default
 // Todo: Fix line endings
 
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
 struct Options {
-    #[clap(short, long)]
+    #[clap(short, long, default_value = "./.github/classroom/autograding.json")]
     config: String,
     #[clap(short, long)]
     skip_setup: bool,

@@ -9,7 +9,7 @@
       "cargo": {
         "args": ["build"]
       },
-      "args": ["--config", "./.github/classroom/autograding.json"],
+      "args": [],
       "cwd": "/mnt/f/School/21/4/computer_systems/weeks/1/homework-1-nice-regular-box-redux-tim-harding"
     }
   ]
