@@ -26,6 +26,7 @@ struct TestCase {
     name: String,
     setup: Option<String>,
     run: String,
+    // Todo: Optional input and output
     input: String,
     output: String,
     comparison: Comparison,
