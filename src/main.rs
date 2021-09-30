@@ -104,13 +104,13 @@ fn set_up_and_run_test(test: &TestCase) -> bool {
     if let Some(setup) = &test.setup {
         match set_up_test(&setup) {
             Ok(stdout) => {
-                println!("{}", stdout);
+                print!("{}", stdout);
             }
             Err(error) => {
                 if let TestFailure::Stderr(stderr) = error {
-                    println!("{}\n❌ {}", stderr, test.name.red());
+                    println!("{}❌ {}", stderr, test.name.red());
                 } else {
-                    println!("{}\n❌ {}", error.to_string().red(), test.name.red());
+                    println!("{}❌ {}", error.to_string().red(), test.name.red());
                 }
                 return false;
             }
@@ -119,14 +119,14 @@ fn set_up_and_run_test(test: &TestCase) -> bool {
     match run_test(&test) {
         Ok(outcome) => {
             if outcome.success {
-                println!("{}\n✅ {}", outcome.stdout, test.name.green())
+                println!("{}✅ {}", outcome.stdout, test.name.green())
             } else {
-                println!("{}\n❌ {}", outcome.stdout, test.name.red())
+                println!("{}❌ {}", outcome.stdout, test.name.red())
             }
             outcome.success
         }
         Err(error) => {
-            println!("{}\n❌ {}", error.to_string().red(), test.name.red());
+            println!("{}❌ {}", error.to_string().red(), test.name.red());
             false
         }
     }
