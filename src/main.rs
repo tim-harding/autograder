@@ -41,7 +41,7 @@ enum Comparison {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct TestResults {
+struct TestOutcome {
     success: bool,
     output: String,
 }
@@ -51,16 +51,15 @@ fn main() -> Result<()> {
     let file = File::open(options.config)?;
     let reader = BufReader::new(file);
     let config: ConfigRoot = serde_json::from_reader(reader)?;
-    let mut points = 0u16;
     let total_points = config
         .tests
         .iter()
         .filter_map(|test| test.points)
         .reduce(|a, b| a + b)
         .unwrap_or(0);
-    let mut all_succeeded = true;
 
-    // Move Unicode error and success stuff up
+    let mut points = 0u16;
+    let mut all_succeeded = true;
 
     for test in config.tests {
         match run_test(&test) {
@@ -90,7 +89,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_test(test: &TestCase) -> Result<TestResults> {
+fn run_test(test: &TestCase) -> Result<TestOutcome> {
     println!("📝 {}", test.name);
     set_up_test(&test)?;
     let results = get_test_results(&test)?;
@@ -133,14 +132,13 @@ fn set_up_test(test: &TestCase) -> Result<String> {
     }
 }
 
-fn get_test_results(test: &TestCase) -> Result<TestResults> {
-    let mut run_parts = test.run.split(" ");
-    let executable = run_parts
-        .next()
-        .ok_or(anyhow!("Could not get run command executable"))?;
-    let args: Vec<_> = run_parts.collect();
-    let mut command = Command::new(&executable)
-        .args(&args)
+fn get_test_results(test: &TestCase) -> Result<TestOutcome> {
+    let bash_command = format!("'{}'", test.run);
+    let mut command = Command::new("bash")
+        .args(&[
+            "-c",
+            &bash_command,
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -164,7 +162,7 @@ fn get_test_results(test: &TestCase) -> Result<TestResults> {
                 re.is_match(&stdout)
             }
         };
-        Ok(TestResults {
+        Ok(TestOutcome {
             success,
             output: stdout,
         })
