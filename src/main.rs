@@ -110,7 +110,7 @@ fn set_up_and_run_test(test: &TestCase) -> bool {
                 if let TestFailure::Stderr(stderr) = error {
                     println!("{}❌ {}", stderr, test.name.red());
                 } else {
-                    println!("{}❌ {}", error.to_string().red(), test.name.red());
+                    println!("{}\n❌ {}", error.to_string().red(), test.name.red());
                 }
                 return false;
             }
@@ -126,7 +126,7 @@ fn set_up_and_run_test(test: &TestCase) -> bool {
             outcome.success
         }
         Err(error) => {
-            println!("{}❌ {}", error.to_string().red(), test.name.red());
+            println!("{}\n❌ {}", error.to_string().red(), test.name.red());
             false
         }
     }
