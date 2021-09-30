@@ -1,11 +1,12 @@
-use anyhow::{anyhow, Result};
 use clap::Clap;
 use colored::Colorize;
 use regex::Regex;
 use serde::Deserialize;
 use std::fs::File;
-use std::io::{BufReader, Write};
+use std::io::{self, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::string::FromUtf8Error;
+use thiserror::Error;
 
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
 struct Options {
@@ -43,10 +44,24 @@ enum Comparison {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct TestOutcome {
     success: bool,
-    output: String,
+    stdout: String,
 }
 
-fn main() -> Result<()> {
+#[derive(Debug, Error)]
+enum TestFailure {
+    #[error("{0}")]
+    Stderr(String),
+    #[error("{0}")]
+    Message(String),
+    #[error("{0}")]
+    Io(#[from] io::Error),
+    #[error("{0}")]
+    Utf8(#[from] FromUtf8Error),
+    #[error("{0}")]
+    Regex(#[from] regex::Error),
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = Options::parse();
     let file = File::open(options.config)?;
     let reader = BufReader::new(file);
@@ -62,94 +77,94 @@ fn main() -> Result<()> {
     let mut all_succeeded = true;
 
     for test in config.tests {
-        match run_test(&test) {
-            Ok(results) => {
-                if results.success {
-                    if let Some(test_points) = test.points {
-                        points += test_points;
-                    }
-                    println!("{}", results.output);
-                } else {
-                    all_succeeded = false;
-                    eprintln!("{}", results.output);
-                }
+        let pass = set_up_and_run_test(&test);
+        if pass {
+            if let Some(test_points) = test.points {
+                points += test_points;
             }
-            Err(error) => {
-                all_succeeded = false;
-                eprintln!("{}", error.to_string().red());
-            }
+        } else {
+            all_succeeded = false;
         }
+        println!("\n");
     }
 
     if all_succeeded {
-        println!("{}", "All tests pass".green());
-        println!("✨🌟💖💎🦄💎💖🌟✨🌟💖💎🦄💎💖🌟✨");
+        println!(
+            "{}\n✨🌟💖💎🦄💎💖🌟✨🌟💖💎🦄💎💖🌟✨",
+            "All tests pass".green()
+        );
     }
     println!("Points {}/{}", points, total_points);
     Ok(())
 }
 
-fn run_test(test: &TestCase) -> Result<TestOutcome> {
+fn set_up_and_run_test(test: &TestCase) -> bool {
     println!("📝 {}", test.name);
-    set_up_test(&test)?;
-    let results = get_test_results(&test)?;
-    Ok(results)
-}
-
-fn set_up_test(test: &TestCase) -> Result<String> {
     if let Some(setup) = &test.setup {
-        match Command::new(setup).output() {
-            Ok(output) => {
-                if output.status.success() {
-                    if let Ok(stdout) = String::from_utf8(output.stdout) {
-                        Ok(stdout)
-                    } else {
-                        Err(anyhow!("{}", "Could not read stdout as utf8"))
-                    }
-                } else {
-                    let failure_message =
-                        format!("❌ {} {}\n\n", "Failed to set up test", test.name);
-                    if let Ok(stderr) = String::from_utf8(output.stderr) {
-                        Err(anyhow!("{}\n{}", failure_message, stderr))
-                    } else {
-                        Err(anyhow!(
-                            "{}\n{}",
-                            failure_message,
-                            "Coult not read stderr as utf8"
-                        ))
-                    }
-                }
+        match set_up_test(&setup) {
+            Ok(stdout) => {
+                println!("{}", stdout);
             }
-            Err(error) => Err(anyhow!(
-                "❌ {} {}\n{}",
-                "Failed to set up test",
-                test.name,
-                error.to_string()
-            )),
+            Err(error) => {
+                if let TestFailure::Stderr(stderr) = error {
+                    println!("{}\n❌ {}", stderr, test.name.red());
+                } else {
+                    println!("{}\n❌ {}", error.to_string().red(), test.name.red());
+                }
+                return false;
+            }
         }
-    } else {
-        Ok("".to_string())
+    }
+    match run_test(&test) {
+        Ok(outcome) => {
+            if outcome.success {
+                println!("{}\n✅ {}", outcome.stdout, test.name.green())
+            } else {
+                println!("{}\n❌ {}", outcome.stdout, test.name.red())
+            }
+            outcome.success
+        }
+        Err(error) => {
+            println!("{}\n❌ {}", error.to_string().red(), test.name.red());
+            false
+        }
     }
 }
 
-fn get_test_results(test: &TestCase) -> Result<TestOutcome> {
+fn set_up_test(setup_command: &str) -> Result<String, TestFailure> {
+    let output = Command::new(setup_command).output()?;
+    if output.status.success() {
+        if let Ok(stdout) = String::from_utf8(output.stdout) {
+            Ok(stdout)
+        } else {
+            let message = format!("Could not read stdout as utf8");
+            Err(TestFailure::Message(message))
+        }
+    } else {
+        if let Ok(stderr) = String::from_utf8(output.stderr) {
+            Err(TestFailure::Stderr(stderr))
+        } else {
+            let message = format!("Could not read stderr as utf8");
+            Err(TestFailure::Message(message))
+        }
+    }
+}
+
+fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
     let mut command = Command::new("bash")
-        .args(&[
-            "-c",
-            &test.run,
-        ])
+        .args(&["-c", &test.run])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
+
     {
-        let stdin = command
-            .stdin
-            .as_mut()
-            .ok_or(anyhow!("Could not get a handle to stdin"))?;
+        let stdin = command.stdin.as_mut().ok_or(TestFailure::Message(
+            "Could not get a handle to stdin".to_string(),
+        ))?;
         stdin.write_all(test.input.as_bytes())?;
-        // Stdin drops and finishes input
-    }
+    } // Stdin drops and finishes input
+
     let output = command.wait_with_output()?;
     if output.status.success() {
         let stdout = String::from_utf8(output.stdout)?;
@@ -161,12 +176,9 @@ fn get_test_results(test: &TestCase) -> Result<TestOutcome> {
                 re.is_match(&stdout)
             }
         };
-        Ok(TestOutcome {
-            success,
-            output: stdout,
-        })
+        Ok(TestOutcome { success, stdout })
     } else {
         let stderr = String::from_utf8(output.stderr)?;
-        Err(anyhow!("{}", stderr))
+        Err(TestFailure::Stderr(stderr))
     }
 }
