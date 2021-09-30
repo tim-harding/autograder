@@ -168,6 +168,8 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
 
     let output = command.wait_with_output()?;
     if output.status.success() {
+        // Todo: Include this as part of error
+        // std::io::stdout().write(&output.stdout)?;
         let stdout = String::from_utf8(output.stdout)?;
         let success = match test.comparison {
             Comparison::Included => stdout.contains(&test.output),
