@@ -1,2 +1,4 @@
 /target
 run.sh
+**/*.out
+**/*.o

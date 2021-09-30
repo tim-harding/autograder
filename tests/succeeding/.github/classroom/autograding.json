@@ -1,0 +1,34 @@
+{
+  "tests": [
+    {
+      "name": "Reverses 'Hello, world'",
+      "setup": "make",
+      "run": "./a.out",
+      "input": "Hello, world",
+      "output": "dlrow ,olleH\n",
+      "comparison": "exact",
+      "timeout": 1,
+      "points": 2
+    },
+    {
+        "name": "Reverses 'Things and stuff'",
+        "setup": "make",
+        "run": "./a.out",
+        "input": "Things",
+        "output": "sgnihT",
+        "comparison": "included",
+        "timeout": 1,
+        "points": 3
+    },
+    {
+        "name": "Reverses 'abcba'",
+        "setup": "make",
+        "run": "./a.out",
+        "input": "abcba",
+        "output": "[ab]+c[ab]+",
+        "comparison": "regex",
+        "timeout": 1,
+        "points": 4
+    }
+  ]
+}
