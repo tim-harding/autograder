@@ -133,11 +133,10 @@ fn set_up_test(test: &TestCase) -> Result<String> {
 }
 
 fn get_test_results(test: &TestCase) -> Result<TestOutcome> {
-    let bash_command = format!("'{}'", test.run);
     let mut command = Command::new("bash")
         .args(&[
             "-c",
-            &bash_command,
+            &test.run,
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
