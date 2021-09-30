@@ -40,9 +40,15 @@ enum Comparison {
     Regex,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TestResults {
+    success: bool,
+    output: String,
+}
+
 fn main() -> Result<()> {
-    let opts: Options = Options::parse();
-    let file = File::open(opts.config)?;
+    let options: Options = Options::parse();
+    let file = File::open(options.config)?;
     let reader = BufReader::new(file);
     let config: ConfigRoot = serde_json::from_reader(reader)?;
     let mut points = 0u16;
@@ -54,102 +60,28 @@ fn main() -> Result<()> {
         .unwrap_or(0);
     let mut all_succeeded = true;
 
+    // Move Unicode error and success stuff up
+
     for test in config.tests {
-        println!("📝 {}", test.name);
-
-        let succeeded = if let Some(setup) = test.setup {
-            match Command::new(setup).output() {
-                Ok(output) => {
-                    if output.status.success() {
-                        if let Ok(stdout) = String::from_utf8(output.stdout) {
-                            println!("{}", stdout);
-                        }
-                        true
-                    } else {
-                        if let Ok(stderr) = String::from_utf8(output.stderr) {
-                            eprintln!("{}", stderr);
-                        }
-                        eprintln!(
-                            "❌ {} {}\n\n",
-                            "Failed to set up test".red(),
-                            test.name.red()
-                        );
-                        false
+        match run_test(&test) {
+            Ok(results) => {
+                if results.success {
+                    if let Some(test_points) = test.points {
+                        points += test_points;
                     }
-                }
-                Err(error) => {
-                    eprintln!(
-                        "❌ {} {}\n\n",
-                        "Failed to set up test".red(),
-                        test.name.red()
-                    );
-                    eprintln!("{}", error.to_string().red());
-                    false
-                }
-            }
-        } else {
-            true
-        };
-
-        let succeeded = if succeeded {
-            let mut run_parts = test.run.split(" ");
-            let executable = run_parts
-                .next()
-                .ok_or(anyhow!("Could not get run command executable"))?;
-            let args: Vec<_> = run_parts.collect();
-            let mut command = Command::new(&executable)
-                .args(&args)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()?;
-            {
-                let stdin = command
-                    .stdin
-                    .as_mut()
-                    .ok_or(anyhow!("Could not get a handle to stdin"))?;
-                stdin.write_all(test.input.as_bytes())?;
-                // Stdin drops and finishes input
-            }
-            let output = command.wait_with_output()?;
-            if output.status.success() {
-                if let Ok(stdout) = String::from_utf8(output.stdout) {
-                    println!("{}", &stdout);
-                    let okay = match test.comparison {
-                        Comparison::Included => stdout.contains(&test.output),
-                        Comparison::Exact => stdout.eq(&test.output),
-                        Comparison::Regex => {
-                            let re = Regex::new(&test.output)?;
-                            re.is_match(&stdout)
-                        }
-                    };
-                    if okay {
-                        println!("✅ {}\n\n", test.name);
-                    } else {
-                        eprintln!("❌ {}\n\n", test.name.red());
-                    }
-                    okay
+                    println!("{}", results.output);
                 } else {
-                    false
+                    all_succeeded = false;
+                    eprintln!("{}", results.output);
                 }
-            } else {
-                if let Ok(stderr) = String::from_utf8(output.stderr) {
-                    eprintln!("{}", stderr);
-                }
-                eprintln!("❌ {}\n\n", test.name.red());
-                false
             }
-        } else {
-            false
-        };
-
-        all_succeeded &= succeeded;
-        if succeeded {
-            if let Some(test_points) = test.points {
-                points += test_points;
+            Err(error) => {
+                all_succeeded = false;
+                eprintln!("{}", error.to_string().red());
             }
         }
     }
+
     if all_succeeded {
         println!("{}", "All tests pass".green());
         println!("✨🌟💖💎🦄💎💖🌟✨🌟💖💎🦄💎💖🌟✨");
@@ -158,4 +90,86 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-// Todo: Continue on from failed tests
+fn run_test(test: &TestCase) -> Result<TestResults> {
+    println!("📝 {}", test.name);
+    set_up_test(&test)?;
+    let results = get_test_results(&test)?;
+    Ok(results)
+}
+
+fn set_up_test(test: &TestCase) -> Result<String> {
+    if let Some(setup) = &test.setup {
+        match Command::new(setup).output() {
+            Ok(output) => {
+                if output.status.success() {
+                    if let Ok(stdout) = String::from_utf8(output.stdout) {
+                        Ok(stdout)
+                    } else {
+                        Err(anyhow!("{}", "Could not read stdout as utf8"))
+                    }
+                } else {
+                    let failure_message =
+                        format!("❌ {} {}\n\n", "Failed to set up test", test.name);
+                    if let Ok(stderr) = String::from_utf8(output.stderr) {
+                        Err(anyhow!("{}\n{}", failure_message, stderr))
+                    } else {
+                        Err(anyhow!(
+                            "{}\n{}",
+                            failure_message,
+                            "Coult not read stderr as utf8"
+                        ))
+                    }
+                }
+            }
+            Err(error) => Err(anyhow!(
+                "❌ {} {}\n{}",
+                "Failed to set up test",
+                test.name,
+                error.to_string()
+            )),
+        }
+    } else {
+        Ok("".to_string())
+    }
+}
+
+fn get_test_results(test: &TestCase) -> Result<TestResults> {
+    let mut run_parts = test.run.split(" ");
+    let executable = run_parts
+        .next()
+        .ok_or(anyhow!("Could not get run command executable"))?;
+    let args: Vec<_> = run_parts.collect();
+    let mut command = Command::new(&executable)
+        .args(&args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    {
+        let stdin = command
+            .stdin
+            .as_mut()
+            .ok_or(anyhow!("Could not get a handle to stdin"))?;
+        stdin.write_all(test.input.as_bytes())?;
+        // Stdin drops and finishes input
+    }
+    let output = command.wait_with_output()?;
+    if output.status.success() {
+        let stdout = String::from_utf8(output.stdout)?;
+        let success = match test.comparison {
+            Comparison::Included => stdout.contains(&test.output),
+            Comparison::Exact => stdout.eq(&test.output),
+            Comparison::Regex => {
+                let re = Regex::new(&test.output)?;
+                re.is_match(&stdout)
+            }
+        };
+        Ok(TestResults {
+            success,
+            output: stdout,
+        })
+    } else {
+        let stderr = String::from_utf8(output.stderr)?;
+        Err(anyhow!("{}", stderr))
+    }
+}
