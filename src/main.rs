@@ -1,4 +1,3 @@
-use anyhow::Context;
 use clap::Clap;
 use colored::Colorize;
 use regex::Regex;
@@ -63,13 +62,11 @@ enum TestFailure {
     Regex(#[from] regex::Error),
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = Options::parse();
-    let file =
-        File::open(options.config).context("Could not find the autograding configuration")?;
+    let file = File::open(options.config)?;
     let reader = BufReader::new(file);
-    let config: ConfigRoot = serde_json::from_reader(reader)
-        .context("Could not read the autograding configuration file as JSON")?;
+    let config: ConfigRoot = serde_json::from_reader(reader)?;
     let total_points = config
         .tests
         .iter()
@@ -135,23 +132,21 @@ fn set_up_and_run_test(test: &TestCase) -> bool {
     }
 }
 
-fn set_up_test(setup_command: &str) -> anyhow::Result<String> {
-    let output = Command::new(setup_command)
-        .output()
-        .context("Failed to run test setup")?;
+fn set_up_test(setup_command: &str) -> Result<String, TestFailure> {
+    let output = Command::new(setup_command).output()?;
     if output.status.success() {
         if let Ok(stdout) = String::from_utf8(output.stdout) {
             Ok(stdout)
         } else {
             let message = format!("Could not read stdout as utf8");
-            Err(TestFailure::Message(message).into())
+            Err(TestFailure::Message(message))
         }
     } else {
         if let Ok(stderr) = String::from_utf8(output.stderr) {
-            Err(TestFailure::Stderr(stderr).into())
+            Err(TestFailure::Stderr(stderr))
         } else {
             let message = format!("Could not read stderr as utf8");
-            Err(TestFailure::Message(message).into())
+            Err(TestFailure::Message(message))
         }
     }
 }
@@ -162,8 +157,7 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()
-        .context("Failed to start Bash with the test run command")?;
+        .spawn()?;
 
     {
         let stdin = command.stdin.as_mut().ok_or(TestFailure::Message(
