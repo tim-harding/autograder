@@ -70,7 +70,7 @@ struct TestOutcome {
 }
 
 #[derive(Debug, Error)]
-enum TestFailure {
+enum AutograderError {
     #[error("{0}")]
     Stderr(String),
     #[error("{0}")]
@@ -97,13 +97,13 @@ enum TestFailure {
     },
 }
 
-impl TestFailure {
+impl AutograderError {
     fn print(&self, test_name: &str) {
         match self {
-            TestFailure::Stderr(stderr) => {
+            AutograderError::Stderr(stderr) => {
                 println!("{}❌ {}", stderr, test_name.red());
             }
-            TestFailure::Utf8 { error, reason } => {
+            AutograderError::Utf8 { error, reason } => {
                 // If we can't print these bytes at this point,
                 // it's a lost cause. ☠️
                 let _ = std::io::stdout().write(&error.as_bytes());
@@ -123,14 +123,14 @@ impl TestFailure {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = Options::parse();
-    let file = File::open(options.config).map_err(|error| TestFailure::Io {
+    let file = File::open(options.config).map_err(|error| AutograderError::Io {
         error,
         reason: "Could not open the autograding config file",
     })?;
     let reader = BufReader::new(file);
     let config = {
         let mut config: ConfigRoot =
-            serde_json::from_reader(reader).map_err(|error| TestFailure::Json {
+            serde_json::from_reader(reader).map_err(|error| AutograderError::Json {
                 error,
                 reason: "Could not read the autograding config for one of the following reasons:
                     \t- Could not read the file
@@ -207,47 +207,47 @@ fn set_up_and_run_test(test: &TestCase) -> bool {
     }
 }
 
-fn set_up_test(setup_command: &str) -> Result<String, TestFailure> {
+fn set_up_test(setup_command: &str) -> Result<String, AutograderError> {
     let output = Command::new(setup_command)
         .output()
-        .map_err(|error| TestFailure::Io {
+        .map_err(|error| AutograderError::Io {
             error,
             reason: "Failed to run test setup command",
         })?;
     if output.status.success() {
-        let stdout = String::from_utf8(output.stdout).map_err(|error| TestFailure::Utf8 {
+        let stdout = String::from_utf8(output.stdout).map_err(|error| AutograderError::Utf8 {
             error,
             reason: STDOUT_UTF8_MESSAGE,
         })?;
         Ok(stdout)
     } else {
-        let stderr = String::from_utf8(output.stderr).map_err(|error| TestFailure::Utf8 {
+        let stderr = String::from_utf8(output.stderr).map_err(|error| AutograderError::Utf8 {
             error,
             reason: STDERR_UTF8_MESSAGE,
         })?;
-        Err(TestFailure::Stderr(stderr))
+        Err(AutograderError::Stderr(stderr))
     }
 }
 
-fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
+fn run_test(test: &TestCase) -> Result<TestOutcome, AutograderError> {
     let mut command = Command::new("bash")
         .args(&["-c", &test.run])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| TestFailure::Io {
+        .map_err(|error| AutograderError::Io {
             error,
             reason: "Failed to start bash with the test run command",
         })?;
 
     if let Some(input) = &test.input {
-        let stdin = command.stdin.as_mut().ok_or(TestFailure::Message(
+        let stdin = command.stdin.as_mut().ok_or(AutograderError::Message(
             "Could not get a handle to stdin".to_string(),
         ))?;
         stdin
             .write_all(input.as_bytes())
-            .map_err(|error| TestFailure::Io {
+            .map_err(|error| AutograderError::Io {
                 error,
                 reason: "Failed to pipe input to the running test process",
             })?;
@@ -255,12 +255,12 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
 
     let output = command
         .wait_with_output()
-        .map_err(|error| TestFailure::Io {
+        .map_err(|error| AutograderError::Io {
             error,
             reason: "Failed to run the test to completion",
         })?;
     if output.status.success() {
-        let stdout = String::from_utf8(output.stdout).map_err(|error| TestFailure::Utf8 {
+        let stdout = String::from_utf8(output.stdout).map_err(|error| AutograderError::Utf8 {
             error,
             reason: STDOUT_UTF8_MESSAGE,
         })?;
@@ -270,11 +270,12 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
                     Comparison::Included => stdout.contains(expected_output),
                     Comparison::Exact => stdout.eq(expected_output),
                     Comparison::Regex => {
-                        let re =
-                            Regex::new(&expected_output).map_err(|error| TestFailure::Regex {
+                        let re = Regex::new(&expected_output).map_err(|error| {
+                            AutograderError::Regex {
                                 error,
                                 reason: "Failed to parse regex for output comparison",
-                            })?;
+                            }
+                        })?;
                         re.is_match(&stdout)
                     }
                 }
@@ -286,11 +287,11 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
         };
         Ok(TestOutcome { success, stdout })
     } else {
-        let stderr = String::from_utf8(output.stderr).map_err(|error| TestFailure::Utf8 {
+        let stderr = String::from_utf8(output.stderr).map_err(|error| AutograderError::Utf8 {
             error,
             reason: STDERR_UTF8_MESSAGE,
         })?;
-        Err(TestFailure::Stderr(stderr))
+        Err(AutograderError::Stderr(stderr))
     }
 }
 
