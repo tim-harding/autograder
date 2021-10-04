@@ -5,7 +5,15 @@
 
 int main() {
     char buffer[BUFFER_SIZE];
-    fgets(buffer, BUFFER_SIZE, stdin);
+    char* read_start = buffer;
+    while (1) {
+        char* read_result = fgets(read_start, BUFFER_SIZE, stdin);
+        if (read_result == NULL) {
+            break;
+        }
+        unsigned length = strlen(read_start);
+        read_start += length;
+    }
     int length = strlen(buffer);
     for (int i = 0; i < length / 2; i++) {
         char tmp = buffer[i];

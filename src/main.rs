@@ -11,11 +11,14 @@ use thiserror::Error;
 const STDERR_UTF8_MESSAGE: &'static str = "stderr contained malformed UTF-8 text";
 const STDOUT_UTF8_MESSAGE: &'static str = "stdout contained malformed UTF-8 text";
 
-// Todo: Help messages
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
 struct Options {
+    /// The path to the autograding configuration
     #[clap(short, long, default_value = "./.github/classroom/autograding.json")]
     config: String,
+    /// Removes \r from test inputs and outputs
+    #[clap(short, long)]
+    strip_crlf: bool,
 }
 
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -77,7 +80,6 @@ enum TestFailure {
         error: io::Error,
         reason: &'static str,
     },
-    // Todo: Remember to print error.bytes
     #[error("{reason}\n{error}")]
     Utf8 {
         error: FromUtf8Error,
@@ -118,7 +120,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = Options::parse();
     let file = File::open(options.config)?;
     let reader = BufReader::new(file);
-    let config: ConfigRoot = serde_json::from_reader(reader)?;
+    let config = {
+        let mut config: ConfigRoot = serde_json::from_reader(reader)?;
+        if options.strip_crlf {
+            for test in config.tests.iter_mut() {
+                test.input = test.input.take().map(|input| strip_crlf(&input));
+                test.output = test.output.take().map(|output| strip_crlf(&output));
+            }
+        }
+        config
+    };
+
     let total_points = config
         .tests
         .iter()
@@ -244,7 +256,7 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
                     Comparison::Exact => stdout.eq(expected_output),
                     Comparison::Regex => {
                         let re =
-                            Regex::new(expected_output).map_err(|error| TestFailure::Regex {
+                            Regex::new(&expected_output).map_err(|error| TestFailure::Regex {
                                 error,
                                 reason: "Failed to parse regex for output comparison",
                             })?;
@@ -265,4 +277,18 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
         })?;
         Err(TestFailure::Stderr(stderr))
     }
+}
+
+fn strip_crlf(to_strip: &str) -> String {
+    let mut out = String::with_capacity(to_strip.len());
+    let mut iter = to_strip.chars();
+    while let Some(next) = iter.next() {
+        match next {
+            '\r' => {
+                // Do nothing
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }

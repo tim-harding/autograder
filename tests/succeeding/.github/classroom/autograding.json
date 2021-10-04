@@ -10,16 +10,18 @@
       "timeout": 1,
       "points": 2
     },
+
     {
         "name": "Reverses 'Things and stuff'",
         "setup": "make",
         "run": "./a.out",
-        "input": "Things",
+        "input": "\n\rThings\n\r",
         "output": "sgnihT",
         "comparison": "included",
         "timeout": 1,
         "points": 3
     },
+
     {
         "name": "Reverses 'abcba'",
         "setup": "make",
