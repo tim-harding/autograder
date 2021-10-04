@@ -1,7 +1,7 @@
 use clap::Clap;
 use colored::Colorize;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::fs::File;
 use std::io::{self, BufReader, Write};
 use std::process::{Command, Stdio};
@@ -28,14 +28,28 @@ struct ConfigRoot {
 #[serde(rename_all = "camelCase")]
 struct TestCase {
     name: String,
+    #[serde(deserialize_with = "deserialize_excluding_empty_strings")]
     setup: Option<String>,
     run: String,
-    // Todo: Optional input and output
-    input: String,
-    output: String,
-    comparison: Comparison,
-    timeout: u16,
+    #[serde(deserialize_with = "deserialize_excluding_empty_strings")]
+    input: Option<String>,
+    #[serde(deserialize_with = "deserialize_excluding_empty_strings")]
+    output: Option<String>,
+    comparison: Option<Comparison>,
+    timeout: Option<u16>, // Unused
     points: Option<u16>,
+}
+
+fn deserialize_excluding_empty_strings<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(s))
+    }
 }
 
 #[derive(Deserialize, Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -200,12 +214,12 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
             reason: "Failed to start bash with the test run command",
         })?;
 
-    {
+    if let Some(input) = &test.input {
         let stdin = command.stdin.as_mut().ok_or(TestFailure::Message(
             "Could not get a handle to stdin".to_string(),
         ))?;
         stdin
-            .write_all(test.input.as_bytes())
+            .write_all(input.as_bytes())
             .map_err(|error| TestFailure::Io {
                 error,
                 reason: "Failed to pipe input to the running test process",
@@ -223,16 +237,25 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
             error,
             reason: STDOUT_UTF8_MESSAGE,
         })?;
-        let success = match test.comparison {
-            Comparison::Included => stdout.contains(&test.output),
-            Comparison::Exact => stdout.eq(&test.output),
-            Comparison::Regex => {
-                let re = Regex::new(&test.output).map_err(|error| TestFailure::Regex {
-                    error,
-                    reason: "Failed to parse regex for output comparison",
-                })?;
-                re.is_match(&stdout)
+        let success = if let Some(expected_output) = &test.output {
+            if let Some(comparison) = &test.comparison {
+                match comparison {
+                    Comparison::Included => stdout.contains(expected_output),
+                    Comparison::Exact => stdout.eq(expected_output),
+                    Comparison::Regex => {
+                        let re =
+                            Regex::new(expected_output).map_err(|error| TestFailure::Regex {
+                                error,
+                                reason: "Failed to parse regex for output comparison",
+                            })?;
+                        re.is_match(&stdout)
+                    }
+                }
+            } else {
+                true
             }
+        } else {
+            true
         };
         Ok(TestOutcome { success, stdout })
     } else {
