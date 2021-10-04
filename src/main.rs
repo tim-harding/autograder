@@ -90,6 +90,11 @@ enum TestFailure {
         error: regex::Error,
         reason: &'static str,
     },
+    #[error("{error}\n{reason}")]
+    Json {
+        error: serde_json::Error,
+        reason: &'static str,
+    },
 }
 
 impl TestFailure {
@@ -118,10 +123,20 @@ impl TestFailure {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options: Options = Options::parse();
-    let file = File::open(options.config)?;
+    let file = File::open(options.config).map_err(|error| TestFailure::Io {
+        error,
+        reason: "Could not open the autograding config file",
+    })?;
     let reader = BufReader::new(file);
     let config = {
-        let mut config: ConfigRoot = serde_json::from_reader(reader)?;
+        let mut config: ConfigRoot =
+            serde_json::from_reader(reader).map_err(|error| TestFailure::Json {
+                error,
+                reason: "Could not read the autograding config for one of the following reasons:
+                    \t- Could not read the file
+                    \t- Could not parse the file as JSON
+                    \t- The JSON did not match the recognized schema",
+            })?;
         if options.strip_crlf {
             for test in config.tests.iter_mut() {
                 test.input = test.input.take().map(|input| strip_crlf(&input));
