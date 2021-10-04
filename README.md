@@ -30,4 +30,6 @@ Navigate to the root of your assignment repository and run
 
 `autograder`
 
-If needed, you may specify the `autograding.json` file location with the `--config` flag. Autograder expects to be run under Ubuntu or some platform with `bash`.
+For more information about command line options, run
+
+`autograder --help`
