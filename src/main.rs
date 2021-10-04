@@ -121,7 +121,16 @@ impl AutograderError {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
+    match main_inner() {
+        Ok(_) => {}
+        Err(error) => {
+            eprintln!("{}", error.to_string().red());
+        }
+    }
+}
+
+fn main_inner() -> Result<(), AutograderError> {
     let options: Options = Options::parse();
     let file = File::open(options.config).map_err(|error| AutograderError::Io {
         error,
