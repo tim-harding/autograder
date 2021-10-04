@@ -8,6 +8,10 @@ use std::process::{Command, Stdio};
 use std::string::FromUtf8Error;
 use thiserror::Error;
 
+const STDERR_UTF8_MESSAGE: &'static str = "stderr contained malformed UTF-8 text";
+const STDOUT_UTF8_MESSAGE: &'static str = "stdout contained malformed UTF-8 text";
+
+// Todo: Help messages
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
 struct Options {
     #[clap(short, long, default_value = "./.github/classroom/autograding.json")]
@@ -54,12 +58,46 @@ enum TestFailure {
     Stderr(String),
     #[error("{0}")]
     Message(String),
-    #[error("{0}")]
-    Io(#[from] io::Error),
-    #[error("{0}")]
-    Utf8(#[from] FromUtf8Error),
-    #[error("{0}")]
-    Regex(#[from] regex::Error),
+    #[error("{reason}\n{error}")]
+    Io {
+        error: io::Error,
+        reason: &'static str,
+    },
+    // Todo: Remember to print error.bytes
+    #[error("{reason}\n{error}")]
+    Utf8 {
+        error: FromUtf8Error,
+        reason: &'static str,
+    },
+    #[error("{error}\n{reason}")]
+    Regex {
+        error: regex::Error,
+        reason: &'static str,
+    },
+}
+
+impl TestFailure {
+    fn print(&self, test_name: &str) {
+        match self {
+            TestFailure::Stderr(stderr) => {
+                println!("{}❌ {}", stderr, test_name.red());
+            }
+            TestFailure::Utf8 { error, reason } => {
+                // If we can't print these bytes at this point,
+                // it's a lost cause. ☠️
+                let _ = std::io::stdout().write(&error.as_bytes());
+                println!(
+                    "{}\n{}\n❌ {}",
+                    reason.red(),
+                    error.to_string().red(),
+                    test_name.red()
+                );
+            }
+            other => {
+                println!("{}\n❌ {}", other.to_string().red(), test_name.red());
+            }
+        }
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -107,11 +145,7 @@ fn set_up_and_run_test(test: &TestCase) -> bool {
                 print!("{}", stdout);
             }
             Err(error) => {
-                if let TestFailure::Stderr(stderr) = error {
-                    println!("{}❌ {}", stderr, test.name.red());
-                } else {
-                    println!("{}\n❌ {}", error.to_string().red(), test.name.red());
-                }
+                error.print(&test.name);
                 return false;
             }
         }
@@ -126,28 +160,31 @@ fn set_up_and_run_test(test: &TestCase) -> bool {
             outcome.success
         }
         Err(error) => {
-            println!("{}\n❌ {}", error.to_string().red(), test.name.red());
+            error.print(&test.name);
             false
         }
     }
 }
 
 fn set_up_test(setup_command: &str) -> Result<String, TestFailure> {
-    let output = Command::new(setup_command).output()?;
+    let output = Command::new(setup_command)
+        .output()
+        .map_err(|error| TestFailure::Io {
+            error,
+            reason: "Failed to run test setup command",
+        })?;
     if output.status.success() {
-        if let Ok(stdout) = String::from_utf8(output.stdout) {
-            Ok(stdout)
-        } else {
-            let message = format!("Could not read stdout as utf8");
-            Err(TestFailure::Message(message))
-        }
+        let stdout = String::from_utf8(output.stdout).map_err(|error| TestFailure::Utf8 {
+            error,
+            reason: STDOUT_UTF8_MESSAGE,
+        })?;
+        Ok(stdout)
     } else {
-        if let Ok(stderr) = String::from_utf8(output.stderr) {
-            Err(TestFailure::Stderr(stderr))
-        } else {
-            let message = format!("Could not read stderr as utf8");
-            Err(TestFailure::Message(message))
-        }
+        let stderr = String::from_utf8(output.stderr).map_err(|error| TestFailure::Utf8 {
+            error,
+            reason: STDERR_UTF8_MESSAGE,
+        })?;
+        Err(TestFailure::Stderr(stderr))
     }
 }
 
@@ -157,31 +194,52 @@ fn run_test(test: &TestCase) -> Result<TestOutcome, TestFailure> {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|error| TestFailure::Io {
+            error,
+            reason: "Failed to start bash with the test run command",
+        })?;
 
     {
         let stdin = command.stdin.as_mut().ok_or(TestFailure::Message(
             "Could not get a handle to stdin".to_string(),
         ))?;
-        stdin.write_all(test.input.as_bytes())?;
+        stdin
+            .write_all(test.input.as_bytes())
+            .map_err(|error| TestFailure::Io {
+                error,
+                reason: "Failed to pipe input to the running test process",
+            })?;
     } // Stdin drops and finishes input
 
-    let output = command.wait_with_output()?;
+    let output = command
+        .wait_with_output()
+        .map_err(|error| TestFailure::Io {
+            error,
+            reason: "Failed to run the test to completion",
+        })?;
     if output.status.success() {
-        // Todo: Include this as part of error
-        // std::io::stdout().write(&output.stdout)?;
-        let stdout = String::from_utf8(output.stdout)?;
+        let stdout = String::from_utf8(output.stdout).map_err(|error| TestFailure::Utf8 {
+            error,
+            reason: STDOUT_UTF8_MESSAGE,
+        })?;
         let success = match test.comparison {
             Comparison::Included => stdout.contains(&test.output),
             Comparison::Exact => stdout.eq(&test.output),
             Comparison::Regex => {
-                let re = Regex::new(&test.output)?;
+                let re = Regex::new(&test.output).map_err(|error| TestFailure::Regex {
+                    error,
+                    reason: "Failed to parse regex for output comparison",
+                })?;
                 re.is_match(&stdout)
             }
         };
         Ok(TestOutcome { success, stdout })
     } else {
-        let stderr = String::from_utf8(output.stderr)?;
+        let stderr = String::from_utf8(output.stderr).map_err(|error| TestFailure::Utf8 {
+            error,
+            reason: STDERR_UTF8_MESSAGE,
+        })?;
         Err(TestFailure::Stderr(stderr))
     }
 }
