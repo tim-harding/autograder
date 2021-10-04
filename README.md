@@ -18,8 +18,7 @@ With a [Rust toolchain](https://www.rust-lang.org/tools/install) installed, run
 ### Script
 
 ```
-git clone https://github.com/tim-harding/autograder.git
-cd autograder
+curl https://raw.githubusercontent.com/tim-harding/autograder/master/install.sh
 chmod +x ./install.sh
 ./install.sh
 ```
