@@ -11,7 +11,9 @@ use thiserror::Error;
 const STDERR_UTF8_MESSAGE: &'static str = "stderr contained malformed UTF-8 text";
 const STDOUT_UTF8_MESSAGE: &'static str = "stdout contained malformed UTF-8 text";
 
+/// Mimics the output of the GitHub Classroom autograder
 #[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
+#[clap(version = "0.3.0", author = "Tim Harding <Tim@TimHarding.co>")]
 struct Options {
     /// The path to the autograding configuration
     #[clap(short, long, default_value = "./.github/classroom/autograding.json")]
