@@ -1,4 +1,4 @@
-use clap::Clap;
+use clap::Parser;
 use colored::Colorize;
 use regex::Regex;
 use serde::{Deserialize, Deserializer};
@@ -12,8 +12,8 @@ const STDERR_UTF8_MESSAGE: &'static str = "stderr contained malformed UTF-8 text
 const STDOUT_UTF8_MESSAGE: &'static str = "stdout contained malformed UTF-8 text";
 
 /// Mimics the output of the GitHub Classroom autograder
-#[derive(Clap, Debug, Clone, Hash, PartialEq, Eq)]
-#[clap(version = "0.3.0", author = "Tim Harding <Tim@TimHarding.co>")]
+#[derive(Parser, Debug, Clone, PartialEq)]
+#[clap(version, author, about)]
 struct Options {
     /// The path to the autograding configuration
     #[clap(short, long, default_value = "./.github/classroom/autograding.json")]
@@ -23,13 +23,13 @@ struct Options {
     strip_crlf: bool,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct ConfigRoot {
     tests: Vec<TestCase>,
 }
 
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct TestCase {
     name: String,
@@ -57,7 +57,7 @@ where
     }
 }
 
-#[derive(Deserialize, Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Deserialize, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 enum Comparison {
     Included,
